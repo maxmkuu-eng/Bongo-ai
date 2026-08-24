@@ -1,6 +1,24 @@
 import http from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { extname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const port = Number(process.env.PORT || 3000);
+const rootDir = fileURLToPath(new URL('..', import.meta.url));
+const distDir = join(rootDir, 'dist');
+
+const mimeTypes = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.ico': 'image/x-icon',
+  '.webp': 'image/webp',
+};
 
 const send = (res, status, body) => {
   const data = JSON.stringify(body);
@@ -13,10 +31,27 @@ const send = (res, status, body) => {
   res.end(data);
 };
 
+const serveStatic = async (res, pathname) => {
+  const requested = pathname === '/' ? '/index.html' : pathname;
+  const filePath = join(distDir, requested.replace(/^\/+/, ''));
+  if (!filePath.startsWith(distDir)) return false;
+
+  try {
+    const data = await readFile(filePath);
+    res.writeHead(200, { 'Content-Type': mimeTypes[extname(filePath)] || 'application/octet-stream' });
+    res.end(data);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const server = http.createServer(async (req, res) => {
+  const pathname = new URL(req.url || '/', 'http://localhost').pathname;
+
   if (req.method === 'OPTIONS') return send(res, 204, {});
 
-  if (req.method === 'GET' && req.url === '/api/health') {
+  if (req.method === 'GET' && pathname === '/api/health') {
     return send(res, 200, {
       ok: true,
       service: 'bongo-ai',
@@ -24,7 +59,7 @@ const server = http.createServer(async (req, res) => {
     });
   }
 
-  if (req.method === 'POST' && req.url === '/api/chat') {
+  if (req.method === 'POST' && pathname === '/api/chat') {
     let raw = '';
     req.on('data', chunk => {
       raw += chunk;
@@ -51,6 +86,11 @@ const server = http.createServer(async (req, res) => {
       }
     });
     return;
+  }
+
+  if (req.method === 'GET' && await serveStatic(res, pathname)) return;
+  if (req.method === 'GET' && !pathname.startsWith('/api/')) {
+    if (await serveStatic(res, '/index.html')) return;
   }
 
   return send(res, 404, { error: 'Not found' });
