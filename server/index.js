@@ -2,18 +2,32 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { webSearch } from './web-search.js';
 
-const port=Number(process.env.PORT||3000);const rootDir=fileURLToPath(new URL('..',import.meta.url));const distDir=join(rootDir,'dist');
-const mimeTypes={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.ico':'image/x-icon','.webp':'image/webp'};
-const send=(res,status,body)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type'});res.end(JSON.stringify(body));};
-const serveStatic=async(res,pathname)=>{const requested=pathname==='/'?'/index.html':pathname;const filePath=join(distDir,requested.replace(/^\/+/,''));if(!filePath.startsWith(distDir))return false;try{const data=await readFile(filePath);res.writeHead(200,{'Content-Type':mimeTypes[extname(filePath)]||'application/octet-stream'});res.end(data);return true;}catch{return false;}};
-const currentQuery=/\b(current|currently|now|today|latest|recent|recently|this year|this month|who is|who's|nani ni|nani anaitwa|kwa sasa|sasa hivi|leo|habari za|tukio|rais|waziri|waziri mkuu|mkuu wa|matokeo)\b/i;
-const server=http.createServer(async(req,res)=>{const pathname=new URL(req.url||'/','http://localhost').pathname;if(req.method==='OPTIONS')return send(res,204,{});
-if(req.method==='GET'&&pathname==='/api/health')return send(res,200,{ok:true,service:'bongo-ai',aiConfigured:Boolean(process.env.GEMINI_API_KEY),searchConfigured:Boolean(process.env.TAVILY_API_KEY),model:process.env.GEMINI_MODEL||'gemini-3.6-flash',webSearch:'dedicated'});
-if(req.method==='POST'&&pathname==='/api/chat'){let raw='';req.on('data',chunk=>{raw+=chunk;if(raw.length>1024*1024)req.destroy();});req.on('end',async()=>{try{const body=JSON.parse(raw||'{}');const message=String(body.message||'').trim();if(!message)return send(res,400,{error:'Message is required.'});if(!process.env.GEMINI_API_KEY)return send(res,503,{error:'GEMINI_API_KEY is not configured on the server.'});
-const needsSearch=currentQuery.test(message);let sources=[];if(needsSearch){if(!process.env.TAVILY_API_KEY)return send(res,503,{error:'TAVILY_API_KEY is required for current-information questions.'});sources=await webSearch(message);if(!sources.length)return send(res,502,{error:'Web search returned no usable sources. I will not guess current information.'});}
-const {GoogleGenAI}=await import('@google/genai');const ai=new GoogleGenAI({apiKey:process.env.GEMINI_API_KEY});const model=process.env.GEMINI_MODEL||'gemini-3.6-flash';const sourceContext=needsSearch?'\n\nCURRENT WEB SOURCES (use these as the factual basis; do not use stale memory when they conflict):\n'+sources.map((s,i)=>`[${i+1}] ${s.title}\nURL: ${s.url}\n${s.content}`).join('\n\n'):'';const systemInstruction=needsSearch?'You are BONGO AI. Answer in the user’s language. This is a current-information question. Use the supplied web sources as the factual basis. Verify dates and prefer the most recent authoritative source. Do not invent facts. If the sources do not establish an answer, say so. Include source URLs in a concise Sources section.':'You are BONGO AI. Answer in the user’s language accurately and helpfully. Do not claim to have searched the web unless web sources were supplied.';
-const response=await ai.models.generateContent({model,contents:[{role:'user',parts:[{text:message+sourceContext}]}],config:{systemInstruction}});return send(res,200,{text:response.text||'',sources:sources.map(({title,url})=>({title,url}))});}catch(error){console.error('BONGO request failed:',error?.message||error);return send(res,502,{error:error?.message||'Request failed'});}});return;}
-if(req.method==='GET'&&await serveStatic(res,pathname))return;if(req.method==='GET'&&!pathname.startsWith('/api/')&&await serveStatic(res,'/index.html'))return;return send(res,404,{error:'Not found'});});
-server.on('error',error=>{console.error('BONGO AI server error:',error);process.exitCode=1;});server.listen(port,'0.0.0.0',()=>console.log(`BONGO AI server listening on 0.0.0.0:${port}`));
+const port = Number(process.env.PORT || 3000);
+const rootDir = fileURLToPath(new URL('..', import.meta.url));
+const distDir = join(rootDir, 'dist');
+const mimeTypes = { '.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.ico':'image/x-icon','.webp':'image/webp' };
+const send = (res,status,body) => { res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type'}); res.end(JSON.stringify(body)); };
+const serveStatic = async (res,pathname) => { const requested=pathname==='/'?'/index.html':pathname; const filePath=join(distDir,requested.replace(/^\/+/,'')); if(!filePath.startsWith(distDir)) return false; try { const data=await readFile(filePath); res.writeHead(200,{'Content-Type':mimeTypes[extname(filePath)]||'application/octet-stream'}); res.end(data); return true; } catch { return false; } };
+const server=http.createServer(async(req,res)=>{
+  const pathname=new URL(req.url||'/','http://localhost').pathname;
+  if(req.method==='OPTIONS') return send(res,204,{});
+  if(req.method==='GET'&&pathname==='/api/health') return send(res,200,{ok:true,service:'bongo-ai',aiConfigured:Boolean(process.env.GEMINI_API_KEY),model:process.env.GEMINI_MODEL||'gemini-3.6-flash',webSearch:'not-configured'});
+  if(req.method==='POST'&&pathname==='/api/chat'){
+    let raw=''; req.on('data',chunk=>{raw+=chunk;if(raw.length>1024*1024)req.destroy();});
+    req.on('end',async()=>{try{
+      const body=JSON.parse(raw||'{}'); const message=String(body.message||'').trim();
+      if(!message)return send(res,400,{error:'Message is required.'});
+      if(!process.env.GEMINI_API_KEY)return send(res,503,{error:'GEMINI_API_KEY is not configured on the server.'});
+      const {GoogleGenAI}=await import('@google/genai'); const ai=new GoogleGenAI({apiKey:process.env.GEMINI_API_KEY});
+      const model=process.env.GEMINI_MODEL||'gemini-3.6-flash';
+      const response=await ai.models.generateContent({model,contents:[{role:'user',parts:[{text:message}]}],config:{systemInstruction:'You are BONGO AI. Answer accurately in the user’s language. Do not claim to have live-searched the web unless a dedicated web-search source is explicitly provided.'}});
+      return send(res,200,{text:response.text||''});
+    }catch(error){console.error('BONGO request failed:',error?.message||error);return send(res,502,{error:`Gemini request failed: ${error?.message||'Unknown provider error'}`});}}); return;
+  }
+  if(req.method==='GET'&&await serveStatic(res,pathname))return;
+  if(req.method==='GET'&&!pathname.startsWith('/api/')&&await serveStatic(res,'/index.html'))return;
+  return send(res,404,{error:'Not found'});
+});
+server.on('error',error=>{console.error('BONGO AI server error:',error);process.exitCode=1;});
+server.listen(port,'0.0.0.0',()=>console.log(`BONGO AI server listening on 0.0.0.0:${port}`));
