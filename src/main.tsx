@@ -11,6 +11,29 @@ const suggestions = [
 ];
 type Message = { role: 'user' | 'ai'; text: string; image?: string };
 
+async function compressImage(file: File): Promise<{ dataUrl: string; mimeType: string }> {
+  const bitmap = await createImageBitmap(file);
+  const maxDimension = 1280;
+  const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Imeshindikana kuandaa picha.');
+  ctx.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close();
+
+  let quality = 0.78;
+  let dataUrl = canvas.toDataURL('image/jpeg', quality);
+  while (dataUrl.length > 4 * 1024 * 1024 * 1.37 && quality > 0.5) {
+    quality -= 0.08;
+    dataUrl = canvas.toDataURL('image/jpeg', quality);
+  }
+  return { dataUrl, mimeType: 'image/jpeg' };
+}
+
 function App() {
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<Message[]>(() => { try { const saved=localStorage.getItem(STORAGE_KEY); const parsed=saved?JSON.parse(saved):[]; return Array.isArray(parsed)?parsed:[]; } catch { return []; } });
@@ -24,11 +47,19 @@ function App() {
 
   useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(messages)); } catch {} }, [messages]);
 
-  function chooseImage(e: React.ChangeEvent<HTMLInputElement>) {
+  async function chooseImage(e: React.ChangeEvent<HTMLInputElement>) {
     const file=e.target.files?.[0]; if(!file) return;
     if(!file.type.startsWith('image/')) { setError('Tafadhali chagua picha.'); return; }
-    if(file.size>8*1024*1024) { setError('Picha ni kubwa. Tumia picha isiyozidi 8 MB.'); return; }
-    const reader=new FileReader(); reader.onload=()=>{ const result=String(reader.result||''); setImageData(result); setImagePreview(result); setImageMime(file.type); setError(''); }; reader.readAsDataURL(file);
+    if(file.size>20*1024*1024) { setError('Picha ni kubwa sana. Tumia picha isiyozidi 20 MB.'); return; }
+    try {
+      setError('');
+      const compressed = await compressImage(file);
+      setImageData(compressed.dataUrl);
+      setImagePreview(compressed.dataUrl);
+      setImageMime(compressed.mimeType);
+    } catch {
+      setError('Imeshindikana kuandaa picha. Tafadhali jaribu picha nyingine.');
+    }
     e.target.value='';
   }
   function openImagePicker(){ fileRef.current?.click(); }
