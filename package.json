@@ -13,9 +13,11 @@
   },
   "dependencies": {
     "@google/genai": "latest",
-    "express": "latest",
     "cors": "latest",
     "dotenv": "latest",
+    "express": "latest",
+    "mammoth": "latest",
+    "pdf-parse": "latest",
     "react": "latest",
     "react-dom": "latest"
   },
