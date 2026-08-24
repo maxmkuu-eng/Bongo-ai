@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
 const API_BASE = 'https://amendment-windy-horse.abasthan.app';
+const STORAGE_KEY = 'bongo-ai-chat-v1';
 const suggestions = [
   { icon: '✦', text: 'Nisaidie kuelewa jambo fulani' },
   { icon: '⌁', text: 'Andika wazo la ubunifu' },
@@ -12,10 +13,20 @@ type Message = { role: 'user' | 'ai'; text: string };
 
 function App() {
   const [message, setMessage] = useState('');
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      const parsed = saved ? JSON.parse(saved) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(messages)); } catch {}
+  }, [messages]);
 
   async function sendMessage(e?: React.FormEvent) {
     e?.preventDefault();
@@ -36,6 +47,11 @@ function App() {
     } finally { setLoading(false); }
   }
 
+  function newChat() {
+    setMessages([]); setError(''); setMessage(''); setCopied(false);
+    try { localStorage.removeItem(STORAGE_KEY); } catch {}
+  }
+
   async function copyLast() {
     const last = [...messages].reverse().find(m => m.role === 'ai');
     if (!last) return;
@@ -48,10 +64,10 @@ function App() {
     <div className="ambient ambient-one" /><div className="ambient ambient-two" />
     <section className={`shell ${started ? 'chat-mode' : ''}`}>
       <header className="topbar">
-        <button className="brand-mark brand-button" type="button" onClick={() => { setMessages([]); setError(''); }} aria-label="BONGO AI home">
+        <button className="brand-mark brand-button" type="button" onClick={newChat} aria-label="BONGO AI home">
           <div className="brand-orb">B</div><div><strong>BONGO</strong><span>AI</span></div>
         </button>
-        <div className="top-actions"><div className="online"><i /> Online</div>{started && <button className="new-chat" onClick={() => { setMessages([]); setError(''); setMessage(''); }} type="button">＋ New chat</button>}</div>
+        <div className="top-actions"><div className="online"><i /> Online</div>{started && <button className="new-chat" onClick={newChat} type="button">＋ New chat</button>}</div>
       </header>
 
       {!started ? <>
@@ -77,7 +93,7 @@ function App() {
         <input value={message} onChange={e => setMessage(e.target.value)} placeholder="Muulize BONGO AI chochote..." aria-label="Andika ujumbe" />
         <button className="send" disabled={loading || !message.trim()} aria-label="Tuma ujumbe">{loading ? '…' : '↑'}</button>
       </form>
-      <div className="hint">BONGO AI inaweza kufanya makosa. Hakiki taarifa muhimu.</div>
+      <div className="hint">Mazungumzo yako yanahifadhiwa kwenye kifaa hiki. BONGO AI inaweza kufanya makosa.</div>
     </section>
   </main>;
 }
