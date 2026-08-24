@@ -13,7 +13,7 @@ type Message = { role: 'user' | 'ai'; text: string; image?: string };
 
 async function compressImage(file: File): Promise<{ dataUrl: string; mimeType: string }> {
   const bitmap = await createImageBitmap(file);
-  const maxDimension = 1280;
+  const maxDimension = 1024;
   const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
   const width = Math.max(1, Math.round(bitmap.width * scale));
   const height = Math.max(1, Math.round(bitmap.height * scale));
@@ -25,11 +25,16 @@ async function compressImage(file: File): Promise<{ dataUrl: string; mimeType: s
   ctx.drawImage(bitmap, 0, 0, width, height);
   bitmap.close();
 
-  let quality = 0.78;
+  // Keep the JSON request comfortably below common reverse-proxy limits.
+  const targetBytes = 700 * 1024;
+  let quality = 0.72;
   let dataUrl = canvas.toDataURL('image/jpeg', quality);
-  while (dataUrl.length > 4 * 1024 * 1024 * 1.37 && quality > 0.5) {
+  while (dataUrl.length > targetBytes * 1.37 && quality > 0.25) {
     quality -= 0.08;
     dataUrl = canvas.toDataURL('image/jpeg', quality);
+  }
+  if (dataUrl.length > targetBytes * 1.37) {
+    throw new Error('Picha hii haiwezi kubanwa vya kutosha. Tafadhali chagua picha nyingine.');
   }
   return { dataUrl, mimeType: 'image/jpeg' };
 }
@@ -57,8 +62,8 @@ function App() {
       setImageData(compressed.dataUrl);
       setImagePreview(compressed.dataUrl);
       setImageMime(compressed.mimeType);
-    } catch {
-      setError('Imeshindikana kuandaa picha. Tafadhali jaribu picha nyingine.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Imeshindikana kuandaa picha.');
     }
     e.target.value='';
   }
