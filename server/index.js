@@ -12,27 +12,35 @@ const serveStatic = async (res,pathname) => { const requested=pathname==='/'?'/i
 const readJsonBody = req => new Promise((resolve,reject)=>{ let raw=''; req.on('data',chunk=>{ raw+=chunk; if(raw.length>2*1024*1024){ reject(new Error('Request body too large.')); req.destroy(); }}); req.on('end',()=>{ try{ resolve(JSON.parse(raw||'{}')); }catch{ reject(new Error('Invalid JSON body.')); }}); req.on('error',reject); });
 const readBinaryBody = req => new Promise((resolve,reject)=>{ const chunks=[]; let size=0; req.on('data',chunk=>{ size+=chunk.length; if(size>2*1024*1024){ reject(new Error('Image is too large. Please choose a smaller image.')); req.destroy(); return; } chunks.push(chunk); }); req.on('end',()=>resolve(Buffer.concat(chunks))); req.on('error',reject); });
 const createAI = async () => { if(!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is not configured on the server.'); const {GoogleGenAI}=await import('@google/genai'); return new GoogleGenAI({apiKey:process.env.GEMINI_API_KEY}); };
-const modelName = () => process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+const chatModel = () => process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+const imageModel = () => process.env.GEMINI_IMAGE_MODEL || 'gemini-3-pro-image';
+const extractImage = response => { for(const candidate of (response?.candidates||[])){ for(const part of (candidate?.content?.parts||[])){ if(part?.inlineData?.data && String(part.inlineData.mimeType||'').startsWith('image/')) return {mimeType:part.inlineData.mimeType,data:part.inlineData.data}; }} return null; };
 const server=http.createServer(async(req,res)=>{
   const url=new URL(req.url||'/','http://localhost'); const pathname=url.pathname;
   if(req.method==='OPTIONS') return send(res,204,{});
-  if(req.method==='GET'&&pathname==='/api/health') return send(res,200,{ok:true,service:'bongo-ai',aiConfigured:Boolean(process.env.GEMINI_API_KEY),model:modelName(),webSearch:'not-configured',vision:true});
+  if(req.method==='GET'&&pathname==='/api/health') return send(res,200,{ok:true,service:'bongo-ai',aiConfigured:Boolean(process.env.GEMINI_API_KEY),model:chatModel(),imageModel:imageModel(),webSearch:'not-configured',vision:true,imageGeneration:true});
   if(req.method==='POST'&&pathname==='/api/chat'){
-    try { const body=await readJsonBody(req); const message=String(body.message||'').trim(); if(!message)return send(res,400,{error:'Message is required.'}); const ai=await createAI(); const response=await ai.models.generateContent({model:modelName(),contents:[{role:'user',parts:[{text:message}]}],config:{systemInstruction:'You are BONGO AI. Answer accurately in the user’s language.'}}); return send(res,200,{text:response.text||''}); }
+    try { const body=await readJsonBody(req); const message=String(body.message||'').trim(); if(!message)return send(res,400,{error:'Message is required.'}); const ai=await createAI(); const response=await ai.models.generateContent({model:chatModel(),contents:[{role:'user',parts:[{text:message}]}],config:{systemInstruction:'You are BONGO AI. Answer accurately in the user’s language.'}}); return send(res,200,{text:response.text||''}); }
     catch(error){ console.error('BONGO chat failed:',error?.message||error); return send(res,502,{error:`Gemini request failed: ${error?.message||'Unknown provider error'}`}); }
   }
   if(req.method==='POST'&&pathname==='/api/vision'){
+    try { const headerType=(req.headers['content-type']||'').split(';')[0].toLowerCase(); const requestedType=String(url.searchParams.get('mime')||'').toLowerCase(); const mimeType=headerType.startsWith('image/')?headerType:(['image/jpeg','image/png','image/webp','image/gif'].includes(requestedType)?requestedType:'image/jpeg'); if(!['image/jpeg','image/png','image/webp','image/gif'].includes(mimeType)) return send(res,400,{error:'Unsupported image type.'}); const message=String(url.searchParams.get('message')||'').trim()||'Eleza picha hii kwa undani.'; const image=await readBinaryBody(req); if(!image.length)return send(res,400,{error:'Image is required.'}); const ai=await createAI(); const response=await ai.models.generateContent({model:chatModel(),contents:[{role:'user',parts:[{inlineData:{mimeType,data:image.toString('base64')}},{text:message}]}],config:{systemInstruction:'You are BONGO AI. Inspect the image carefully. Answer accurately in the user’s language and distinguish visible facts from guesses.'}}); return send(res,200,{text:response.text||''}); }
+    catch(error){ console.error('BONGO vision failed:',error?.message||error); return send(res,502,{error:`Gemini vision request failed: ${error?.message||'Unknown provider error'}`}); }
+  }
+  if(req.method==='POST'&&pathname==='/api/image'){
     try {
-      const headerType=(req.headers['content-type']||'').split(';')[0].toLowerCase();
-      const requestedType=String(url.searchParams.get('mime')||'').toLowerCase();
-      const mimeType=headerType.startsWith('image/')?headerType:(['image/jpeg','image/png','image/webp','image/gif'].includes(requestedType)?requestedType:'image/jpeg');
-      if(!['image/jpeg','image/png','image/webp','image/gif'].includes(mimeType)) return send(res,400,{error:'Unsupported image type.'});
-      const message=String(url.searchParams.get('message')||'').trim() || 'Eleza picha hii kwa undani.';
-      const image=await readBinaryBody(req); if(!image.length)return send(res,400,{error:'Image is required.'});
-      const ai=await createAI();
-      const response=await ai.models.generateContent({model:modelName(),contents:[{role:'user',parts:[{inlineData:{mimeType,data:image.toString('base64')}},{text:message}]}],config:{systemInstruction:'You are BONGO AI. Inspect the image carefully. Answer accurately in the user’s language and distinguish visible facts from guesses.'}});
-      return send(res,200,{text:response.text||''});
-    } catch(error){ console.error('BONGO vision failed:',error?.message||error); return send(res,502,{error:`Gemini vision request failed: ${error?.message||'Unknown provider error'}`}); }
+      const body=await readJsonBody(req); const prompt=String(body.prompt||'').trim(); const mode=String(body.mode||'generate');
+      if(!prompt)return send(res,400,{error:'Image prompt is required.'});
+      if(!['generate','edit','variation','background'].includes(mode))return send(res,400,{error:'Unsupported image operation.'});
+      const ai=await createAI(); const parts=[];
+      if(body.imageData){ const mimeType=String(body.mimeType||'image/jpeg'); const data=String(body.imageData).replace(/^data:[^;]+;base64,/,''); if(!data)return send(res,400,{error:'Image data is required.'}); parts.push({inlineData:{mimeType,data}}); }
+      if(mode!=='generate'&&!body.imageData)return send(res,400,{error:'Please attach an image for this operation.'});
+      const instructions={generate:`Create a high-quality image from this request: ${prompt}`,edit:`Edit the provided image according to this request while preserving the subject and composition unless the request asks otherwise: ${prompt}`,variation:`Create a new visual variation of the provided image. Preserve the important subject and overall intent but vary the composition/style as requested: ${prompt}`,background:`Remove the background from the provided image. Keep the main subject clean and intact and return the subject on a transparent background. ${prompt}`};
+      parts.push({text:instructions[mode]});
+      const response=await ai.models.generateContent({model:imageModel(),contents:[{role:'user',parts}],config:{responseModalities:['TEXT','IMAGE']}});
+      const image=extractImage(response); if(!image)return send(res,502,{error:'Image model returned no image. Check GEMINI_IMAGE_MODEL and its quota/access.'});
+      return send(res,200,{image:`data:${image.mimeType};base64,${image.data}`,text:response.text||'',mode,model:imageModel()});
+    } catch(error){ console.error('BONGO image failed:',error?.message||error); return send(res,502,{error:`Gemini image request failed: ${error?.message||'Unknown image provider error'}`}); }
   }
   if(req.method==='GET'&&await serveStatic(res,pathname))return;
   if(req.method==='GET'&&!pathname.startsWith('/api/')&&await serveStatic(res,'/index.html'))return;
