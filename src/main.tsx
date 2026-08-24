@@ -31,6 +31,7 @@ function App() {
     const reader=new FileReader(); reader.onload=()=>{ const result=String(reader.result||''); setImageData(result); setImagePreview(result); setImageMime(file.type); setError(''); }; reader.readAsDataURL(file);
     e.target.value='';
   }
+  function openImagePicker(){ fileRef.current?.click(); }
   function removeImage(){ setImageData(''); setImagePreview(''); setImageMime(''); }
 
   async function sendMessage(e?: React.FormEvent) {
@@ -54,7 +55,12 @@ function App() {
     <header className="topbar"><button className="brand-mark brand-button" type="button" onClick={newChat} aria-label="BONGO AI home"><div className="brand-orb">B</div><div><strong>BONGO</strong><span>AI</span></div></button><div className="top-actions"><div className="online"><i/> Online</div>{started&&<button className="new-chat" onClick={newChat} type="button">＋ New chat</button>}</div></header>
     {!started?<><div className="hero"><div className="eyebrow"><span>✦</span> BONGO AI</div><h1>Habari, <em>karibu.</em></h1><p className="tagline">Msaidizi wako wa akili wa kizazi kipya.</p><p className="intro">Uliza swali, eleza unachohitaji, au tuma picha.</p></div><div className="suggestions">{suggestions.map(item=><button key={item.text} type="button" onClick={()=>setMessage(item.text)}><span>{item.icon}</span>{item.text}<b>›</b></button>)}</div></>:<div className="conversation">{messages.map((item,index)=><article key={`${item.role}-${index}`} className={`message ${item.role}`}><div className="message-avatar">{item.role==='ai'?'B':'M'}</div><div className="message-body"><div className="message-name">{item.role==='ai'?'BONGO AI':'Wewe'}</div>{item.image&&<img className="message-image" src={item.image} alt="Picha iliyotumwa"/>}<p>{item.text}</p></div></article>)}{loading&&<article className="message ai"><div className="message-avatar">B</div><div className="message-body"><div className="message-name">BONGO AI</div><div className="thinking"><span/><span/><span/> Inachambua...</div></div></article>}{error&&<div className="error-card">{error}</div>}{messages.some(m=>m.role==='ai')&&!loading&&<button className="copy-btn" type="button" onClick={copyLast}>{copied?'✓ Imenakili':'⧉ Nakili jibu la mwisho'}</button>}</div>}
     {imagePreview&&<div className="attachment-preview"><img src={imagePreview} alt="Preview ya picha"/><div><strong>Picha imeambatanishwa</strong><span>BONGO AI itaichambua</span></div><button type="button" onClick={removeImage} aria-label="Ondoa picha">×</button></div>}
-    <form onSubmit={sendMessage} className="composer"><input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={chooseImage} hidden/><button className="composer-icon attach" type="button" onClick={()=>fileRef.current?.click()} aria-label="Ambatanisha picha">＋</button><input value={message} onChange={e=>setMessage(e.target.value)} placeholder={imageData?'Uliza kuhusu picha hii...':'Muulize BONGO AI chochote...'} aria-label="Andika ujumbe"/><button className="send" disabled={loading||(!message.trim()&&!imageData)} aria-label="Tuma ujumbe">{loading?'…':'↑'}</button></form>
+    <form onSubmit={sendMessage} className="composer">
+      <input ref={fileRef} id="bongo-image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={chooseImage} hidden aria-label="Chagua picha" />
+      <label className="composer-icon attach" htmlFor="bongo-image-input" role="button" tabIndex={0} aria-label="Ambatanisha picha" onKeyDown={e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openImagePicker();}}}>＋</label>
+      <input value={message} onChange={e=>setMessage(e.target.value)} placeholder={imageData?'Uliza kuhusu picha hii...':'Muulize BONGO AI chochote...'} aria-label="Andika ujumbe"/>
+      <button className="send" disabled={loading||(!message.trim()&&!imageData)} aria-label="Tuma ujumbe">{loading?'…':'↑'}</button>
+    </form>
     <div className="hint">Tuma picha ili BONGO AI ichambue na kujibu maswali kuhusu picha hiyo.</div>
   </section></main>;
 }
