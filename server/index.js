@@ -23,7 +23,9 @@ const server=http.createServer(async(req,res)=>{
   }
   if(req.method==='POST'&&pathname==='/api/vision'){
     try {
-      const mimeType=(req.headers['content-type']||'').split(';')[0].toLowerCase();
+      const headerType=(req.headers['content-type']||'').split(';')[0].toLowerCase();
+      const requestedType=String(url.searchParams.get('mime')||'').toLowerCase();
+      const mimeType=headerType.startsWith('image/')?headerType:(['image/jpeg','image/png','image/webp','image/gif'].includes(requestedType)?requestedType:'image/jpeg');
       if(!['image/jpeg','image/png','image/webp','image/gif'].includes(mimeType)) return send(res,400,{error:'Unsupported image type.'});
       const message=String(url.searchParams.get('message')||'').trim() || 'Eleza picha hii kwa undani.';
       const image=await readBinaryBody(req); if(!image.length)return send(res,400,{error:'Image is required.'});
