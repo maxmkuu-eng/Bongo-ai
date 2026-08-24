@@ -6,10 +6,10 @@ import { fileURLToPath } from 'node:url';
 const port = Number(process.env.PORT || 3000);
 const rootDir = fileURLToPath(new URL('..', import.meta.url));
 const distDir = join(rootDir, 'dist');
-const mimeTypes = { '.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.ico':'image/x-icon','.webp':'image/webp' };
+const mimeTypes = { '.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.ico':'image/x-icon','.webp':'image/webp','.gif':'image/gif' };
 const send = (res,status,body) => { res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type'}); res.end(JSON.stringify(body)); };
 const serveStatic = async (res,pathname) => { const requested=pathname==='/'?'/index.html':pathname; const filePath=join(distDir,requested.replace(/^\/+/,'')); if(!filePath.startsWith(distDir)) return false; try { const data=await readFile(filePath); res.writeHead(200,{'Content-Type':mimeTypes[extname(filePath)]||'application/octet-stream'}); res.end(data); return true; } catch { return false; } };
-const readJsonBody = req => new Promise((resolve,reject)=>{ let raw=''; req.on('data',chunk=>{ raw+=chunk; if(raw.length>12*1024*1024){ reject(new Error('Request is too large.')); req.destroy(); }}); req.on('end',()=>{ try{ resolve(JSON.parse(raw||'{}')); }catch{ reject(new Error('Invalid JSON body.')); }}); req.on('error',reject); });
+const readJsonBody = req => new Promise((resolve,reject)=>{ let raw=''; req.on('data',chunk=>{ raw+=chunk; if(raw.length>30*1024*1024){ reject(new Error('Image request is too large. Please use an image under 20 MB.')); req.destroy(); }}); req.on('end',()=>{ try{ resolve(JSON.parse(raw||'{}')); }catch{ reject(new Error('Invalid JSON body.')); }}); req.on('error',reject); });
 const createAI = async () => { if(!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is not configured on the server.'); const {GoogleGenAI}=await import('@google/genai'); return new GoogleGenAI({apiKey:process.env.GEMINI_API_KEY}); };
 const modelName = () => process.env.GEMINI_MODEL || 'gemini-3.6-flash';
 const server=http.createServer(async(req,res)=>{
@@ -26,7 +26,9 @@ const server=http.createServer(async(req,res)=>{
       if(pathname==='/api/vision'){
         const mimeType=String(body.mimeType||''); const imageData=String(body.imageData||'').replace(/^data:[^;]+;base64,/,'');
         if(!/^image\/(png|jpeg|jpg|webp|gif)$/i.test(mimeType)) return send(res,400,{error:'Unsupported image type. Use PNG, JPEG, WEBP or GIF.'});
-        if(!imageData) return send(res,400,{error:'Image data is required.'});
+        if(!imageData)return send(res,400,{error:'Image data is required.'});
+        const bytes=Math.floor((imageData.length*3)/4)-(imageData.endsWith('==')?2:imageData.endsWith('=')?1:0);
+        if(bytes>20*1024*1024)return send(res,413,{error:'Image is too large. Please choose an image under 20 MB.'});
         contents=[{role:'user',parts:[{inlineData:{mimeType:imageDataMime(mimeType),data:imageData}},{text:message}]}];
       } else contents=[{role:'user',parts:[{text:message}]}];
       const response=await ai.models.generateContent({model:modelName(),contents,config:{systemInstruction}});
