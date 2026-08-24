@@ -13,7 +13,7 @@ const serveStatic = async (res,pathname) => { const requested=pathname==='/'?'/i
 const server=http.createServer(async(req,res)=>{
   const pathname=new URL(req.url||'/','http://localhost').pathname;
   if(req.method==='OPTIONS') return send(res,204,{});
-  if(req.method==='GET'&&pathname==='/api/health') return send(res,200,{ok:true,service:'bongo-ai',aiConfigured:Boolean(process.env.GEMINI_API_KEY),model:process.env.GEMINI_MODEL||'gemini-3.6-flash'});
+  if(req.method==='GET'&&pathname==='/api/health') return send(res,200,{ok:true,service:'bongo-ai',aiConfigured:Boolean(process.env.GEMINI_API_KEY),model:process.env.GEMINI_MODEL||'gemini-3.6-flash',webSearch:true});
   if(req.method==='POST'&&pathname==='/api/chat'){
     let raw=''; req.on('data',chunk=>{raw+=chunk;if(raw.length>1024*1024)req.destroy();});
     req.on('end',async()=>{try{
@@ -22,7 +22,11 @@ const server=http.createServer(async(req,res)=>{
       if(!process.env.GEMINI_API_KEY)return send(res,503,{error:'GEMINI_API_KEY is not configured on the server.'});
       const {GoogleGenAI}=await import('@google/genai'); const ai=new GoogleGenAI({apiKey:process.env.GEMINI_API_KEY});
       const model=process.env.GEMINI_MODEL||'gemini-3.6-flash';
-      const response=await ai.models.generateContent({model,contents:[{role:'user',parts:[{text:message}]}]});
+      const response=await ai.models.generateContent({
+        model,
+        contents:[{role:'user',parts:[{text:message}]}],
+        tools:[{googleSearch:{}}]
+      });
       return send(res,200,{text:response.text||''});
     }catch(error){console.error('Gemini request failed:',error?.message||error);return send(res,502,{error:`Gemini request failed: ${error?.message||'Unknown provider error'}`});}}); return;
   }
