@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
+const API_BASE = 'https://amendment-windy-horse.abasthan.app';
+
 function App() {
   const [message, setMessage] = useState('');
   const [reply, setReply] = useState('');
@@ -13,11 +15,15 @@ function App() {
     if (!message.trim() || loading) return;
     setLoading(true); setError(''); setReply('');
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      const response = await fetch(`${API_BASE}/api/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message })
       });
-      const data = await response.json();
+      const contentType = response.headers.get('content-type') || '';
+      const data = contentType.includes('application/json')
+        ? await response.json()
+        : { error: `Server returned ${response.status} ${response.statusText}` };
       if (!response.ok) throw new Error(data.error || 'Request failed');
       setReply(data.text || '');
     } catch (err) {
