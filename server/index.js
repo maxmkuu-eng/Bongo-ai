@@ -2,37 +2,12 @@ import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-
-const port = Number(process.env.PORT || 3000);
-const rootDir = fileURLToPath(new URL('..', import.meta.url));
-const distDir = join(rootDir, 'dist');
-const mimeTypes = { '.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.ico':'image/x-icon','.webp':'image/webp' };
-const send = (res,status,body) => { res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type'}); res.end(JSON.stringify(body)); };
-const serveStatic = async (res,pathname) => { const requested=pathname==='/'?'/index.html':pathname; const filePath=join(distDir,requested.replace(/^\/+/,'')); if(!filePath.startsWith(distDir)) return false; try { const data=await readFile(filePath); res.writeHead(200,{'Content-Type':mimeTypes[extname(filePath)]||'application/octet-stream'}); res.end(data); return true; } catch { return false; } };
-
-const server=http.createServer(async(req,res)=>{
-  const pathname=new URL(req.url||'/','http://localhost').pathname;
-  if(req.method==='OPTIONS') return send(res,204,{});
-  if(req.method==='GET'&&pathname==='/api/health') return send(res,200,{ok:true,service:'bongo-ai',aiConfigured:Boolean(process.env.GEMINI_API_KEY),model:process.env.GEMINI_MODEL||'gemini-3.6-flash',webSearch:true});
-  if(req.method==='POST'&&pathname==='/api/chat'){
-    let raw=''; req.on('data',chunk=>{raw+=chunk;if(raw.length>1024*1024)req.destroy();});
-    req.on('end',async()=>{try{
-      const body=JSON.parse(raw||'{}'); const message=String(body.message||'').trim();
-      if(!message)return send(res,400,{error:'Message is required.'});
-      if(!process.env.GEMINI_API_KEY)return send(res,503,{error:'GEMINI_API_KEY is not configured on the server.'});
-      const {GoogleGenAI}=await import('@google/genai'); const ai=new GoogleGenAI({apiKey:process.env.GEMINI_API_KEY});
-      const model=process.env.GEMINI_MODEL||'gemini-3.6-flash';
-      const response=await ai.models.generateContent({
-        model,
-        contents:[{role:'user',parts:[{text:message}]}],
-        tools:[{googleSearch:{}}]
-      });
-      return send(res,200,{text:response.text||''});
-    }catch(error){console.error('Gemini request failed:',error?.message||error);return send(res,502,{error:`Gemini request failed: ${error?.message||'Unknown provider error'}`});}}); return;
-  }
-  if(req.method==='GET'&&await serveStatic(res,pathname))return;
-  if(req.method==='GET'&&!pathname.startsWith('/api/')&&await serveStatic(res,'/index.html'))return;
-  return send(res,404,{error:'Not found'});
-});
-server.on('error',error=>{console.error('BONGO AI server error:',error);process.exitCode=1;});
-server.listen(port,'0.0.0.0',()=>console.log(`BONGO AI server listening on 0.0.0.0:${port}`));
+const port=Number(process.env.PORT||3000);const rootDir=fileURLToPath(new URL('..',import.meta.url));const distDir=join(rootDir,'dist');
+const mimeTypes={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.ico':'image/x-icon','.webp':'image/webp'};
+const send=(res,status,body)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type'});res.end(JSON.stringify(body));};
+const serveStatic=async(res,pathname)=>{const requested=pathname==='/'?'/index.html':pathname;const filePath=join(distDir,requested.replace(/^\/+/,''));if(!filePath.startsWith(distDir))return false;try{const data=await readFile(filePath);res.writeHead(200,{'Content-Type':mimeTypes[extname(filePath)]||'application/octet-stream'});res.end(data);return true;}catch{return false;}};
+const server=http.createServer(async(req,res)=>{const pathname=new URL(req.url||'/','http://localhost').pathname;if(req.method==='OPTIONS')return send(res,204,{});
+if(req.method==='GET'&&pathname==='/api/health')return send(res,200,{ok:true,service:'bongo-ai',aiConfigured:Boolean(process.env.GEMINI_API_KEY),model:process.env.GEMINI_MODEL||'gemini-3.6-flash',webSearch:true});
+if(req.method==='POST'&&pathname==='/api/chat'){let raw='';req.on('data',chunk=>{raw+=chunk;if(raw.length>1024*1024)req.destroy();});req.on('end',async()=>{try{const body=JSON.parse(raw||'{}');const message=String(body.message||'').trim();if(!message)return send(res,400,{error:'Message is required.'});if(!process.env.GEMINI_API_KEY)return send(res,503,{error:'GEMINI_API_KEY is not configured on the server.'});const {GoogleGenAI}=await import('@google/genai');const ai=new GoogleGenAI({apiKey:process.env.GEMINI_API_KEY});const model=process.env.GEMINI_MODEL||'gemini-3.6-flash';const response=await ai.models.generateContent({model,contents:[{role:'user',parts:[{text:message}]}],config:{tools:[{googleSearch:{}}],systemInstruction:'You are BONGO AI. Answer in the user’s language. For current, latest, today, now, recent events, public officials, current office holders, or any fact that may have changed, verify it with Google Search before answering. Prefer recent authoritative sources and never rely on outdated knowledge when current information is available.'}});return send(res,200,{text:response.text||''});}catch(error){console.error('Gemini request failed:',error?.message||error);return send(res,502,{error:`Gemini request failed: ${error?.message||'Unknown provider error'}`});}});return;}
+if(req.method==='GET'&&await serveStatic(res,pathname))return;if(req.method==='GET'&&!pathname.startsWith('/api/')&&await serveStatic(res,'/index.html'))return;return send(res,404,{error:'Not found'});});
+server.on('error',error=>{console.error('BONGO AI server error:',error);process.exitCode=1;});server.listen(port,'0.0.0.0',()=>console.log(`BONGO AI server listening on 0.0.0.0:${port}`));
